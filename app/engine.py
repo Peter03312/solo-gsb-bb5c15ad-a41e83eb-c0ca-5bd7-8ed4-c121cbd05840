@@ -23,6 +23,8 @@ class Engine:
         )
         self.findings: list[dict] = []
         self.traces: list[dict] = []
+        # 未四舍五入的各位置浓度表（配液核对用）：下标 0=初始态，之后按执行顺序对应每步完成后
+        self.raw_concentrations: list[dict[str, float]] = []
 
     # ---------------- 快照 ----------------
     def _trace(self, seq: int | None, op: str) -> dict:
@@ -111,6 +113,7 @@ class Engine:
         for ev in rt.reconcile():
             self._emit(0 if self.plan.initial else None, ev)
         self.traces.append(self._trace(None, "initial"))
+        self.raw_concentrations.append(dict(rt.concentrations()))
 
         for st in self.plan.steps:
             # 1) 时间推进 -> 检查已建立接触是否超时
@@ -123,6 +126,7 @@ class Engine:
             for ev in rt.reconcile():
                 self._emit(st.seq, ev)
             self.traces.append(self._trace(st.seq, st.op))
+            self.raw_concentrations.append(dict(rt.concentrations()))
 
         # 结果稳定排序：seq（None 视为 0），同 seq 保持发现顺序
         order = {"forbidden_mix": 0, "material_incompatible": 1, "overtime_contact": 2}

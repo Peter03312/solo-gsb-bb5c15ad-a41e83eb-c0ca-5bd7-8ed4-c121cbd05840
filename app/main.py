@@ -14,9 +14,15 @@ from .models import (
     ErrorResponse,
     PrecheckRequest,
     PrecheckResponse,
+    ReconcileRequest,
+    ReconcileResponse,
     TransferPrecheckRequest,
     TransferPrecheckResponse,
+    TransferReconcileRequest,
+    TransferReconcileResponse,
 )
+from .reconcile import reconcile_single, reconcile_transfer
+from .responses import build_precheck_response, build_transfer_precheck_response
 from .rules import RULESET_VERSION, RULES_BY_ID
 from .transfer_engine import simulate_transfer
 from .transfer_validator import build_transfer_plan
@@ -24,11 +30,12 @@ from .validator import build_plan
 
 app = FastAPI(
     title="化学试剂混配风险预检 API",
-    version="1.1.0",
+    version="1.2.0",
     description=(
         "提交容器初始液体、按顺序执行的加液步骤、试剂浓度与体积，以及容器材质和温度；"
         "逐步计算混配后各组分浓度，识别禁配组合、超时接触与材质不相容。"
-        "另提供双容器转移预检 /api/v1/transfer-precheck。"
+        "另提供双容器转移预检 /api/v1/transfer-precheck，"
+        "以及单/双容器实测浓度核对 /api/v1/reconcile、/api/v1/transfer-reconcile。"
     ),
 )
 
@@ -64,7 +71,7 @@ async def validation_failure_handler(request: Request, exc: errors.ValidationFai
     details = [ErrorDetail(**d).model_dump() for d in exc.details]
     body = ErrorResponse(
         error="validation_error",
-        message="预检请求被逐项拒绝，未进行模拟",
+        message=exc.message or "预检请求被逐项拒绝，未进行模拟",
         details=details,
     ).model_dump()
     return JSONResponse(status_code=400, content=body)
@@ -106,31 +113,23 @@ async def catalog() -> dict:
 async def precheck(req: PrecheckRequest) -> PrecheckResponse:
     plan = build_plan(req)
     result = simulate(plan)
-    return PrecheckResponse(
-        safe=not result["findings"],
-        blocked=bool(result["findings"]),
-        first_blocking_seq=result["first_blocking_seq"],
-        ruleset_version=RULESET_VERSION,
-        vessel_material=plan.vessel_material,
-        temperature_c=plan.temperature_c,
-        findings=result["findings"],
-        final_state=result["final_state"],
-        steps=result["traces"][1:],  # 第 0 条是 initial 快照
-    )
+    return build_precheck_response(plan, result)
 
 
 @app.post("/api/v1/transfer-precheck", response_model=TransferPrecheckResponse)
 async def transfer_precheck(req: TransferPrecheckRequest) -> TransferPrecheckResponse:
     plan = build_transfer_plan(req)
     result = simulate_transfer(plan)
-    return TransferPrecheckResponse(
-        safe=not result["findings"],
-        blocked=bool(result["findings"]),
-        first_blocking_seq=result["first_blocking_seq"],
-        first_blocking_vessel_id=result["first_blocking_vessel_id"],
-        ruleset_version=RULESET_VERSION,
-        temperature_c=plan.temperature_c,
-        findings=result["findings"],
-        steps=result["traces"][1:],  # 第 0 条是 initial 快照
-        final_states=result["final_states"],
-    )
+    return build_transfer_precheck_response(plan, result)
+
+
+@app.post("/api/v1/reconcile", response_model=ReconcileResponse)
+async def reconcile(req: ReconcileRequest) -> ReconcileResponse:
+    """单容器配液核对：沿用原预检校验与模拟，对账实测浓度与预测浓度。"""
+    return reconcile_single(req)
+
+
+@app.post("/api/v1/transfer-reconcile", response_model=TransferReconcileResponse)
+async def transfer_reconcile(req: TransferReconcileRequest) -> TransferReconcileResponse:
+    """双容器配液核对：沿用原转移预检校验与模拟，按容器对账实测浓度与预测浓度。"""
+    return reconcile_transfer(req)

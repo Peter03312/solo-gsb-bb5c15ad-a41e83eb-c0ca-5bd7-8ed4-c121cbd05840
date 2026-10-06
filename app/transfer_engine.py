@@ -33,6 +33,9 @@ class TwoVesselEngine:
         self.by_id: dict[str, VesselRuntime] = {rt.vessel_id: rt for rt in self.runtimes}
         self.findings: list[dict] = []
         self.traces: list[dict] = []
+        # 未四舍五入的各位置浓度表（配液核对用）：下标 0=初始态，之后按执行顺序对应每步完成后；
+        # 每个位置为 {vessel_id: {reagent_id: concentration%}}（容器提交顺序）
+        self.raw_concentrations: list[dict[str, dict[str, float]]] = []
 
     # ---------------- 快照 ----------------
     def _vessel_states(self) -> list[dict]:
@@ -55,6 +58,9 @@ class TwoVesselEngine:
             "volume_ml": round(step.volume_ml, 4) if step is not None and step.volume_ml is not None else None,
             "vessels": self._vessel_states(),
         }
+
+    def _raw_concs(self) -> dict[str, dict[str, float]]:
+        return {rt.vessel_id: dict(rt.concentrations()) for rt in self.runtimes}
 
     # ---------------- 规则事件 -> finding ----------------
     def _effective_limit(self, rule: Rule, key: tuple[str, str]) -> float:
@@ -132,6 +138,7 @@ class TwoVesselEngine:
         for rt in self.runtimes:
             self._reconcile(rt, seq=0)
         self.traces.append(self._trace(None, "initial"))
+        self.raw_concentrations.append(self._raw_concs())
 
         for st in self.plan.steps:
             # 1) 时间推进 -> 先结算两侧此前超时
@@ -156,6 +163,7 @@ class TwoVesselEngine:
                     self._reconcile(rt, st.seq)
 
             self.traces.append(self._trace(st.seq, st.op, step=st))
+            self.raw_concentrations.append(self._raw_concs())
 
         # 稳定排序：seq（None 视为 0） -> 类别 -> 容器提交顺序
         category_order = {"forbidden_mix": 0, "material_incompatible": 1, "overtime_contact": 2}

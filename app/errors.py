@@ -35,8 +35,16 @@ TRANSFER_EXCEEDS_VOLUME = "TRANSFER_EXCEEDS_VOLUME"
 # 模拟期（理论上输入校验通过后不会发生，兜底）
 SIMULATION_ERROR = "SIMULATION_ERROR"
 
+# 配液核对（reconcile）
+INVALID_TOLERANCE = "INVALID_TOLERANCE"
+UNKNOWN_POSITION = "UNKNOWN_POSITION"
+INVALID_POSITION = "INVALID_POSITION"
+DUPLICATE_OBSERVATION = "DUPLICATE_OBSERVATION"
+VESSEL_NOT_APPLICABLE = "VESSEL_NOT_APPLICABLE"
+
 
 class ValidationFailure(Exception):
-    def __init__(self, details: list[dict]):
+    def __init__(self, details: list[dict], message: str | None = None):
         self.details = details
-        super().__init__(f"{len(details)} validation error(s)")
+        self.message = message
+        super().__init__(message or f"{len(details)} validation error(s)")
