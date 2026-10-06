@@ -1,0 +1,103 @@
+{
+  "tolerance_percentage_points": 0.2,
+  "within_tolerance": true,
+  "first_violation": null,
+  "observations": [
+    {
+      "index": 0,
+      "position": 0,
+      "reagent_id": "nacl",
+      "measured_concentration": 10.05,
+      "predicted_concentration": 10.0,
+      "deviation": 0.05000000000000071,
+      "abs_deviation": 0.05000000000000071,
+      "within_tolerance": true
+    },
+    {
+      "index": 1,
+      "position": 1,
+      "reagent_id": "nacl",
+      "measured_concentration": 15.1,
+      "predicted_concentration": 15.0,
+      "deviation": 0.09999999999999964,
+      "abs_deviation": 0.09999999999999964,
+      "within_tolerance": true
+    },
+    {
+      "index": 2,
+      "position": 2,
+      "reagent_id": "nacl",
+      "measured_concentration": 9.9,
+      "predicted_concentration": 10.0,
+      "deviation": -0.09999999999999964,
+      "abs_deviation": 0.09999999999999964,
+      "within_tolerance": true
+    },
+    {
+      "index": 3,
+      "position": 2,
+      "reagent_id": "koh",
+      "measured_concentration": 0.0,
+      "predicted_concentration": 0.0,
+      "deviation": 0.0,
+      "abs_deviation": 0.0,
+      "within_tolerance": true
+    }
+  ],
+  "precheck": {
+    "safe": true,
+    "blocked": false,
+    "first_blocking_seq": null,
+    "ruleset_version": "chem-rules-2026-10-01",
+    "vessel_material": "hdpe",
+    "temperature_c": 22.0,
+    "findings": [],
+    "final_state": {
+      "seq": 2,
+      "op": "dilute",
+      "at_seconds": 10.0,
+      "liquid_volume_ml": 300.0,
+      "cleaned": false,
+      "components": [
+        {
+          "reagent_id": "nacl",
+          "name": "氯化钠溶液",
+          "concentration": 10.0,
+          "pure_volume_ml": 30.0
+        }
+      ]
+    },
+    "steps": [
+      {
+        "seq": 1,
+        "op": "add",
+        "at_seconds": 0.0,
+        "liquid_volume_ml": 200.0,
+        "cleaned": false,
+        "components": [
+          {
+            "reagent_id": "nacl",
+            "name": "氯化钠溶液",
+            "concentration": 15.0,
+            "pure_volume_ml": 30.0
+          }
+        ]
+      },
+      {
+        "seq": 2,
+        "op": "dilute",
+        "at_seconds": 10.0,
+        "liquid_volume_ml": 300.0,
+        "cleaned": false,
+        "components": [
+          {
+            "reagent_id": "nacl",
+            "name": "氯化钠溶液",
+            "concentration": 10.0,
+            "pure_volume_ml": 30.0
+          }
+        ]
+      }
+    ]
+  }
+}

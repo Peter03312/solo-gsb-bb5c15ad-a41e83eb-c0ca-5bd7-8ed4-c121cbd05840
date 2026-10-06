@@ -14,10 +14,16 @@
 > 用途：实验室/工艺 SOP 的自动化预检与教学。规则库为简化的公开化学常识集合，
 > **不能替代** MSDS/SDS 与专业 EHS 评估。
 
-> **本轮新增**：双容器定量转移预检 `POST /api/v1/transfer-precheck`
-> （[说明见此节](#双容器转移预检本轮新增)）。原 `/api/v1/precheck` 单容器预检的
-> **请求与响应完全保持兼容，启动方式不变**（仍是同一个 `uvicorn app.main:app` /
-> `docker compose up`，同一端口 8000）。
+> **本轮新增**：
+> 1. 双容器定量转移预检 `POST /api/v1/transfer-precheck`
+>    （[说明见此节](#双容器转移预检)）；
+> 2. **实测浓度对账** `POST /api/v1/reconcile` 与 `POST /api/v1/transfer-reconcile`
+>    （[说明见此节](#实测浓度对账本轮新增)）：提交**原流程请求 + 统一容差 + 若干实测观测**，
+>    先沿用原校验与模拟，再比较对应步骤完成后的**未四舍五入**预测浓度，返回预检风险、
+>    逐条预测/偏差与最早超差位置。
+>
+> 原 `/api/v1/precheck`、`/api/v1/transfer-precheck` 的**请求与响应完全保持兼容，
+> 启动方式不变**（仍是同一个 `uvicorn app.main:app` / `docker compose up`，同一端口 8000）。
 
 ---
 
@@ -26,7 +32,8 @@
 - [快速开始（Docker Compose）](#快速开始docker-compose)
 - [本地运行（不用 Docker）](#本地运行不用-docker)
 - [API 说明](#api-说明)
-- [双容器转移预检（本轮新增）](#双容器转移预检本轮新增)
+- [双容器转移预检](#双容器转移预检)
+- [实测浓度对账（本轮新增）](#实测浓度对账本轮新增)
 - [逐步状态与浓度模型](#逐步状态与浓度模型)
 - [操作类型](#操作类型)
 - [规则、阈值与接触计时](#规则阈值与接触计时)
@@ -74,6 +81,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 | `GET` | `/catalog` | 内置试剂、容器材质与全部规则（含选择器、阈值、默认接触时长） |
 | `POST` | `/api/v1/precheck` | 单容器混配流程，返回风险与逐步状态（请求/响应保持兼容） |
 | `POST` | `/api/v1/transfer-precheck` | **双容器转移预检**：两只容器之间的定量转移与静置，返回带容器编号的风险与两侧状态 |
+| `POST` | `/api/v1/reconcile` | **单容器实测浓度对账（本轮新增）**：原预检请求 + 容差 + 观测，返回预检结果与逐条偏差 |
+| `POST` | `/api/v1/transfer-reconcile` | **双容器实测浓度对账（本轮新增）**：观测须带容器编号，其余同上 |
 
 ### 请求体
 
@@ -154,7 +163,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
-## 双容器转移预检（本轮新增）
+## 双容器转移预检
 
 `POST /api/v1/transfer-precheck` 判断**已配液在两只容器之间定量转移**时的风险。
 请求描述**编号互异、各有材质与初始液体的两只容器、统一温度**，以及按时刻执行、
@@ -232,6 +241,152 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
+## 实测浓度对账（本轮新增）
+
+实验人员核对**实际配液是否沿预检轨迹运行**：提交**原流程请求**、一个**统一的有限非负浓度容差**
+（百分点）及若干条实测观测，服务先**沿用原请求校验与模拟**（与 `/api/v1/precheck`、
+`/api/v1/transfer-precheck` 完全相同的校验、排序与簿记），再把每条观测与
+**对应步骤完成后**的预测浓度比较：
+
+- 观测位置 `position=0` 表示**初始态**；正整数表示该 `seq` 步骤**完成后**的状态
+  （步骤按 seq 执行顺序重放，乱序提交的原请求按原规则排序后再对账）；
+- 单容器用 `POST /api/v1/reconcile`；双容器用 `POST /api/v1/transfer-reconcile`，
+  每条观测**另须指定 `vessel_id`**；
+- 每条观测指定试剂编号与 **0～100% 的实测浓度**；
+  **该位置未出现的已知试剂按 0% 计**（包括从未加入、已倒空/转出或被清洗掉的试剂）；
+- 比较一律使用**未四舍五入的计算值**（预检快照中 `round(...,4)` 的展示值不参与对账），
+  `|实测 - 预测| ≤ 容差` 才通过（边界等值算通过）；
+- 返回：**原预检风险结果**（`precheck`，与对应预检接口响应逐字段一致）、
+  **逐条预测值与偏差**（按观测提交顺序）、**按步骤执行顺序的最早超差位置**
+  （初始态最前；同位置按观测提交顺序，双容器同位置不区分容器先后、仍按提交下标）；
+- **无观测也可调用**：此时仅返回原预检结果，`within_tolerance=true`。
+
+> 预检发现化学风险（`blocked=true`）与对账是否沿轨迹是两件事：即使原流程有禁配风险，
+> 只要实测与预测吻合，对账仍判通过；风险结果在 `precheck` 中照常给出。
+
+### 请求体
+
+单容器（`POST /api/v1/reconcile`）：
+
+```json
+{
+  "request": {
+    "vessel_material": "hdpe",
+    "temperature_c": 22.0,
+    "initial_liquid": [
+      {"reagent_id": "nacl", "concentration": 10.0, "volume_ml": 100.0}
+    ],
+    "steps": [
+      {"seq": 1, "op": "add", "reagent_id": "nacl",
+       "concentration": 20.0, "volume_ml": 100.0},
+      {"seq": 2, "op": "dilute", "volume_ml": 100.0, "at_seconds": 10}
+    ],
+    "contact_allowances": []
+  },
+  "tolerance_percentage_points": 0.2,
+  "observations": [
+    {"position": 0, "reagent_id": "nacl", "measured_concentration": 10.05},
+    {"position": 1, "reagent_id": "nacl", "measured_concentration": 15.10},
+    {"position": 2, "reagent_id": "nacl", "measured_concentration": 9.90},
+    {"position": 2, "reagent_id": "koh",  "measured_concentration": 0.0}
+  ]
+}
+```
+
+双容器（`POST /api/v1/transfer-reconcile`）的 `request` 与 `/api/v1/transfer-precheck`
+请求体完全相同；观测多一个必填的 `vessel_id`：
+
+```json
+{
+  "request": {
+    "vessels": [
+      {"vessel_id": "V1", "vessel_material": "hdpe",
+       "initial_liquid": [{"reagent_id": "nacl", "concentration": 10.0, "volume_ml": 100.0}]},
+      {"vessel_id": "V2", "vessel_material": "hdpe", "initial_liquid": []}
+    ],
+    "temperature_c": 20.0,
+    "steps": [
+      {"seq": 1, "op": "transfer", "from_vessel": "V1", "to_vessel": "V2",
+       "volume_ml": 40.0, "at_seconds": 30.0}
+    ],
+    "contact_allowances": []
+  },
+  "tolerance_percentage_points": 0.3,
+  "observations": [
+    {"position": 0, "vessel_id": "V1", "reagent_id": "nacl", "measured_concentration": 10.1},
+    {"position": 1, "vessel_id": "V2", "reagent_id": "nacl", "measured_concentration": 10.2}
+  ]
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `request` | **原预检请求体**，结构分别与 `/api/v1/precheck`、`/api/v1/transfer-precheck` 完全一致 |
+| `tolerance_percentage_points` | 统一容差（百分点）：有限、非负数字（`0` 表示必须完全一致；布尔/NaN/±∞ 拒绝） |
+| `observations[].position` | `0`=初始态；正整数=该 `seq` 步骤完成后；必须是 0 或已提交步骤序号之一 |
+| `observations[].reagent_id` | 已知试剂编号（见 `/catalog`）；该位置未出现的已知试剂预测浓度按 0% 计 |
+| `observations[].measured_concentration` | 实测浓度，**[0, 100]** 闭区间内的有限数字 |
+| `observations[].vessel_id` | **仅双容器**：必填，且必须是两只已知容器之一 |
+| `observations` | 可省略或为空数组；同一位置（双容器还须同一容器）同一试剂**不得重复观测** |
+
+### 响应要点
+
+```json
+{
+  "tolerance_percentage_points": 0.5,
+  "within_tolerance": false,
+  "first_violation": {
+    "index": 1,
+    "position": 1,
+    "reagent_id": "nacl",
+    "measured_concentration": 14.1,
+    "predicted_concentration": 15.0,
+    "abs_deviation": 0.9000000000000004
+  },
+  "observations": [
+    {"index": 0, "position": 2, "reagent_id": "nacl",
+     "measured_concentration": 8.0, "predicted_concentration": 10.0,
+     "deviation": -2.0, "abs_deviation": 2.0, "within_tolerance": false},
+    {"index": 1, "position": 1, "reagent_id": "nacl",
+     "measured_concentration": 14.1, "predicted_concentration": 15.0,
+     "deviation": -0.9000000000000004, "abs_deviation": 0.9000000000000004,
+     "within_tolerance": false}
+  ],
+  "precheck": { /* 与对应预检接口响应完全相同 */ }
+}
+```
+
+- `within_tolerance`：全部观测通过（含无观测）为 `true`。
+- `observations[]`：按**观测提交顺序**逐条给出未舍入的 `predicted_concentration`、
+  带符号 `deviation = 实测 - 预测`、`abs_deviation` 与 `within_tolerance`；双容器条目另含 `vessel_id`。
+- `first_violation`：按**步骤执行顺序**（初始态 → 各步骤）找到的最早超差观测，
+  同位置取**提交下标最小**者；无超差为 `null`。
+- 双容器的 `first_violation` 另含 `vessel_id`。
+
+完整请求/响应样例：[`examples/reconcile_safe.json`](examples/reconcile_safe.json) /
+[`examples/reconcile_response_safe.json`](examples/reconcile_response_safe.json)、
+[`examples/reconcile_violation.json`](examples/reconcile_violation.json) /
+[`examples/reconcile_response_violation.json`](examples/reconcile_response_violation.json)、
+[`examples/transfer_reconcile_safe.json`](examples/transfer_reconcile_safe.json) /
+[`examples/transfer_reconcile_response_safe.json`](examples/transfer_reconcile_response_safe.json)。
+
+### 对账拒绝码（整单拒绝，不返回部分对账）
+
+原流程请求无效时，**原样返回对应预检的全部错误码**（见上文两节），不产生任何对账字段。
+对账参数本身的错误逐项收集、一次性返回：
+
+| Code | 触发条件 |
+| --- | --- |
+| `INVALID_TOLERANCE` | 容差为负（NaN/±∞/布尔/类型错误按 `MALFORMED_REQUEST` 在 schema 层拒绝） |
+| `INVALID_POSITION` | `position` 不是 0 或已提交步骤序号之一（或为负/非整数） |
+| `UNKNOWN_REAGENT` | 观测引用未知试剂 |
+| `UNKNOWN_VESSEL` | 双容器观测引用未知 `vessel_id`（缺少 `vessel_id` 为 `MALFORMED_REQUEST`） |
+| `CONCENTRATION_OUT_OF_RANGE` | 实测浓度超出 [0, 100]（NaN/±∞/布尔为 `MALFORMED_REQUEST`） |
+| `DUPLICATE_OBSERVATION` | 同位置同试剂重复观测（双容器按“同位置+同容器+同试剂”判重） |
+| `MALFORMED_REQUEST` | JSON/类型/schema 错误（含未知字段） |
+
+---
+
 ## 逐步状态与浓度模型
 
 采用透明的“**纯物体积**”簿记（体积可加、充分混合假设）：
@@ -296,10 +451,14 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 | `EMPTY_VESSEL_OPERATION` | 容器为空仍 pour/hold |
 | `STALE_STATE_REFERENCE` | **清洗后仍对旧状态做 pour/dilute/hold** |
 | `INVALID_ALLOWANCE` / `DUPLICATE_ALLOWANCE` | 接触时长声明非法（非正/同实体）或重复 |
+| `INVALID_TOLERANCE` | **对账接口**：容差为负（有限非负才合法） |
+| `INVALID_POSITION` | **对账接口**：观测位置不是初始态(0)或已提交步骤序号 |
+| `DUPLICATE_OBSERVATION` | **对账接口**：同位置（双容器还须同容器）同试剂重复观测 |
 
 > 双容器转移预检另用 `INVALID_VESSEL` / `DUPLICATE_VESSEL_ID` / `UNKNOWN_VESSEL` /
 > `SAME_VESSEL` / `EMPTY_SOURCE_VESSEL` / `TRANSFER_EXCEEDS_VOLUME`，详见
-> [双容器转移预检](#双容器转移预检本轮新增)一节。
+> [双容器转移预检](#双容器转移预检)一节；对账接口的整单拒绝规则见
+> [实测浓度对账](#实测浓度对账本轮新增)一节。
 
 ## 内置试剂 / 材质 / 规则
 
@@ -321,6 +480,16 @@ curl -s http://localhost:8000/api/v1/precheck \
 curl -s http://localhost:8000/api/v1/transfer-precheck \
   -H 'Content-Type: application/json' \
   --data @examples/transfer_forbidden.json | python -m json.tool
+
+# 实测浓度对账（单容器；无观测时也可只传 observations: [] 取原预检结果）
+curl -s http://localhost:8000/api/v1/reconcile \
+  -H 'Content-Type: application/json' \
+  --data @examples/reconcile_safe.json | python -m json.tool
+
+# 实测浓度对账（双容器，观测带 vessel_id）
+curl -s http://localhost:8000/api/v1/transfer-reconcile \
+  -H 'Content-Type: application/json' \
+  --data @examples/transfer_reconcile_safe.json | python -m json.tool
 ```
 
 ```python
@@ -375,7 +544,50 @@ else:
         print(v["vessel_id"], v["liquid_volume_ml"], "mL")
 ```
 
-也可直接查看 [`examples/`](examples/) 下的三个请求样例与一个响应样例。
+实测浓度对账（单容器，Python）：
+
+```python
+import requests
+
+original_request = {
+    "vessel_material": "hdpe",
+    "temperature_c": 22.0,
+    "initial_liquid": [{"reagent_id": "nacl", "concentration": 10.0, "volume_ml": 100.0}],
+    "steps": [
+        {"seq": 1, "op": "add", "reagent_id": "nacl", "concentration": 20.0, "volume_ml": 100.0},
+        {"seq": 2, "op": "dilute", "volume_ml": 100.0, "at_seconds": 10},
+    ],
+    "contact_allowances": [],
+}
+payload = {
+    "request": original_request,
+    "tolerance_percentage_points": 0.2,   # 统一容差（百分点，有限非负）
+    "observations": [
+        {"position": 0, "reagent_id": "nacl", "measured_concentration": 10.05},
+        {"position": 1, "reagent_id": "nacl", "measured_concentration": 15.10},
+        {"position": 2, "reagent_id": "nacl", "measured_concentration": 9.90},
+        {"position": 2, "reagent_id": "koh",  "measured_concentration": 0.0},  # 该位置未出现→按 0 计
+    ],
+}
+r = requests.post("http://localhost:8000/api/v1/reconcile", json=payload, timeout=10)
+r.raise_for_status()
+result = r.json()
+print("原预检是否阻断：", result["precheck"]["blocked"])
+for o in result["observations"]:
+    flag = "OK " if o["within_tolerance"] else "OUT"
+    print(flag, f"位置{o['position']}", o["reagent_id"],
+          f"实测{o['measured_concentration']} vs 预测{o['predicted_concentration']:.6f}",
+          f"偏差{o['deviation']:+.6f}")
+if result["first_violation"]:
+    fv = result["first_violation"]
+    print("最早超差：位置", fv["position"], fv["reagent_id"], "偏差", fv["abs_deviation"])
+```
+
+双容器实测浓度对账（Python）：观测多带一个 `vessel_id`，端点换为
+`/api/v1/transfer-reconcile`，响应的 `precheck` 与双容器预检响应一致。
+
+也可直接查看 [`examples/`](examples/) 下的请求/响应样例
+（含 `reconcile_*` 与 `transfer_reconcile_*` 共六个对账样例）。
 
 ## 测试
 
@@ -389,6 +601,10 @@ python3 -m pytest -q
 乱序 seq 的稳定处理（单容器 35 个用例）；双容器转移另覆盖：比例扣减/计入簿记、源转空结束片段、
 转入侧新片段计时、既有片段跨转移延续、材质/禁配在转入侧触发、初始状态两侧检查、
 同刻按 seq 执行，以及全部转移拒绝码（`tests/test_transfer_api.py`，39 个用例）。
+实测对账另覆盖：未四舍五入值参与比较、未出现试剂按零计、容差边界等值通过、
+最早超差按执行顺序+提交顺序定位、无观测仅返预检、有风险流程仍可对账、
+未知步骤/容器/试剂、重复观测、浓度越界、非法容差、布尔/NaN/±∞ 拒绝及原流程无效整单拒绝
+（`tests/test_reconcile_api.py`，41 个用例）。
 
 ## 项目结构
 
@@ -396,17 +612,19 @@ python3 -m pytest -q
 app/
   catalog.py            # 试剂 / 材质目录与标签
   rules.py              # 相容性规则库（禁配 / 限时 / 材质）与版本
-  models.py             # 请求响应 Pydantic 模型（单容器 + 双容器）
+  models.py             # 请求响应 Pydantic 模型（预检 + 转移 + 对账）
   errors.py             # 错误码
   validator.py          # 单容器逐项校验 + 归一化执行计划
   transfer_validator.py # 双容器逐项校验（容器/转移/超量/空源/时序）+ 执行计划
   runtime.py            # 单只容器的状态机：浓度簿记 + 接触片段对账与超时
   engine.py             # 单容器预检：重放计划、事件转 findings、快照
   transfer_engine.py    # 双容器预检：两侧 runtime + transfer/hold 重放
+  reconcile.py          # 实测浓度对账：未舍入浓度重放、观测校验、偏差与最早超差
   main.py               # FastAPI 路由与异常映射
-examples/                 # curl 可用的请求/响应样例（含 transfer_* 四个样例）
+examples/                 # curl 可用的请求/响应样例（含 transfer_* 与 reconcile_*）
 tests/test_api.py
 tests/test_transfer_api.py
+tests/test_reconcile_api.py
 Dockerfile
 docker-compose.yml
 ```

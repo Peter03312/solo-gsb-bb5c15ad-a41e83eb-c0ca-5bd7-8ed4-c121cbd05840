@@ -1,0 +1,130 @@
+{
+  "tolerance_percentage_points": 0.3,
+  "within_tolerance": true,
+  "first_violation": null,
+  "observations": [
+    {
+      "index": 0,
+      "position": 0,
+      "reagent_id": "nacl",
+      "measured_concentration": 10.1,
+      "predicted_concentration": 10.0,
+      "deviation": 0.09999999999999964,
+      "abs_deviation": 0.09999999999999964,
+      "within_tolerance": true,
+      "vessel_id": "V1"
+    },
+    {
+      "index": 1,
+      "position": 0,
+      "reagent_id": "nacl",
+      "measured_concentration": 0.0,
+      "predicted_concentration": 0.0,
+      "deviation": 0.0,
+      "abs_deviation": 0.0,
+      "within_tolerance": true,
+      "vessel_id": "V2"
+    },
+    {
+      "index": 2,
+      "position": 1,
+      "reagent_id": "nacl",
+      "measured_concentration": 9.95,
+      "predicted_concentration": 10.0,
+      "deviation": -0.05000000000000071,
+      "abs_deviation": 0.05000000000000071,
+      "within_tolerance": true,
+      "vessel_id": "V1"
+    },
+    {
+      "index": 3,
+      "position": 1,
+      "reagent_id": "nacl",
+      "measured_concentration": 10.2,
+      "predicted_concentration": 10.0,
+      "deviation": 0.1999999999999993,
+      "abs_deviation": 0.1999999999999993,
+      "within_tolerance": true,
+      "vessel_id": "V2"
+    }
+  ],
+  "precheck": {
+    "safe": true,
+    "blocked": false,
+    "first_blocking_seq": null,
+    "first_blocking_vessel_id": null,
+    "ruleset_version": "chem-rules-2026-10-01",
+    "temperature_c": 20.0,
+    "findings": [],
+    "steps": [
+      {
+        "seq": 1,
+        "op": "transfer",
+        "at_seconds": 30.0,
+        "from_vessel": "V1",
+        "to_vessel": "V2",
+        "volume_ml": 40.0,
+        "vessels": [
+          {
+            "vessel_id": "V1",
+            "vessel_material": "hdpe",
+            "liquid_volume_ml": 60.0,
+            "cleaned": false,
+            "components": [
+              {
+                "reagent_id": "nacl",
+                "name": "氯化钠溶液",
+                "concentration": 10.0,
+                "pure_volume_ml": 6.0
+              }
+            ]
+          },
+          {
+            "vessel_id": "V2",
+            "vessel_material": "hdpe",
+            "liquid_volume_ml": 40.0,
+            "cleaned": false,
+            "components": [
+              {
+                "reagent_id": "nacl",
+                "name": "氯化钠溶液",
+                "concentration": 10.0,
+                "pure_volume_ml": 4.0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "final_states": [
+      {
+        "vessel_id": "V1",
+        "vessel_material": "hdpe",
+        "liquid_volume_ml": 60.0,
+        "cleaned": false,
+        "components": [
+          {
+            "reagent_id": "nacl",
+            "name": "氯化钠溶液",
+            "concentration": 10.0,
+            "pure_volume_ml": 6.0
+          }
+        ]
+      },
+      {
+        "vessel_id": "V2",
+        "vessel_material": "hdpe",
+        "liquid_volume_ml": 40.0,
+        "cleaned": false,
+        "components": [
+          {
+            "reagent_id": "nacl",
+            "name": "氯化钠溶液",
+            "concentration": 10.0,
+            "pure_volume_ml": 4.0
+          }
+        ]
+      }
+    ]
+  }
+}

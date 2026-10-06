@@ -1,0 +1,20 @@
+{
+  "request": {
+    "vessel_material": "hdpe",
+    "temperature_c": 22.0,
+    "initial_liquid": [
+      {"reagent_id": "nacl", "concentration": 10.0, "volume_ml": 100.0}
+    ],
+    "steps": [
+      {"seq": 1, "op": "add", "reagent_id": "nacl",
+       "concentration": 20.0, "volume_ml": 100.0},
+      {"seq": 2, "op": "dilute", "volume_ml": 100.0, "at_seconds": 10}
+    ],
+    "contact_allowances": []
+  },
+  "tolerance_percentage_points": 0.5,
+  "observations": [
+    {"position": 2, "reagent_id": "nacl", "measured_concentration": 8.0},
+    {"position": 1, "reagent_id": "nacl", "measured_concentration": 14.1}
+  ]
+}

@@ -32,11 +32,17 @@ DUPLICATE_VESSEL_ID = "DUPLICATE_VESSEL_ID"
 EMPTY_SOURCE_VESSEL = "EMPTY_SOURCE_VESSEL"
 TRANSFER_EXCEEDS_VOLUME = "TRANSFER_EXCEEDS_VOLUME"
 
+# 实测浓度对账
+INVALID_TOLERANCE = "INVALID_TOLERANCE"
+INVALID_POSITION = "INVALID_POSITION"
+DUPLICATE_OBSERVATION = "DUPLICATE_OBSERVATION"
+
 # 模拟期（理论上输入校验通过后不会发生，兜底）
 SIMULATION_ERROR = "SIMULATION_ERROR"
 
 
 class ValidationFailure(Exception):
-    def __init__(self, details: list[dict]):
+    def __init__(self, details: list[dict], message: str | None = None):
         self.details = details
+        self.message = message or "预检请求被逐项拒绝，未进行模拟"
         super().__init__(f"{len(details)} validation error(s)")

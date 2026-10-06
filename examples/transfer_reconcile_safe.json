@@ -1,0 +1,31 @@
+{
+  "request": {
+    "vessels": [
+      {
+        "vessel_id": "V1",
+        "vessel_material": "hdpe",
+        "initial_liquid": [
+          {"reagent_id": "nacl", "concentration": 10.0, "volume_ml": 100.0}
+        ]
+      },
+      {
+        "vessel_id": "V2",
+        "vessel_material": "hdpe",
+        "initial_liquid": []
+      }
+    ],
+    "temperature_c": 20.0,
+    "steps": [
+      {"seq": 1, "op": "transfer", "from_vessel": "V1",
+       "to_vessel": "V2", "volume_ml": 40.0, "at_seconds": 30.0}
+    ],
+    "contact_allowances": []
+  },
+  "tolerance_percentage_points": 0.3,
+  "observations": [
+    {"position": 0, "vessel_id": "V1", "reagent_id": "nacl", "measured_concentration": 10.1},
+    {"position": 0, "vessel_id": "V2", "reagent_id": "nacl", "measured_concentration": 0.0},
+    {"position": 1, "vessel_id": "V1", "reagent_id": "nacl", "measured_concentration": 9.95},
+    {"position": 1, "vessel_id": "V2", "reagent_id": "nacl", "measured_concentration": 10.20}
+  ]
+}

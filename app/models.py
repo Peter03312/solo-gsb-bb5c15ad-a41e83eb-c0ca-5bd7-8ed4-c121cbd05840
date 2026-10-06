@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Operation = Literal["add", "dilute", "pour", "clean", "hold"]
 TransferOperation = Literal["transfer", "hold"]
@@ -175,6 +175,135 @@ class TransferPrecheckResponse(_Strict):
     findings: list[TransferFinding]
     steps: list[TransferStepTrace]
     final_states: list[VesselStateOut] = Field(..., description="末态：两只容器的最终状态（按提交顺序）")
+
+
+# ---------------------------------------------------------------------------
+# 实测浓度对账请求 / 响应（本轮新增）
+# ---------------------------------------------------------------------------
+class ObservationIn(_Strict):
+    position: int = Field(
+        ...,
+        ge=0,
+        description="对账位置：0=初始态；正整数=该 seq 步骤完成后的状态",
+    )
+    reagent_id: str = Field(..., description="实测试剂编号，见 /catalog；该位置未出现的已知试剂按 0% 计")
+    measured_concentration: float = Field(..., description="实测浓度（质量/体积百分比，0-100）")
+
+    @field_validator("position", mode="before")
+    @classmethod
+    def _position_not_bool(cls, v):
+        if isinstance(v, bool):
+            raise ValueError("position 须为非负整数（0 表示初始态），收到布尔值")
+        return v
+
+    @field_validator("measured_concentration", mode="before")
+    @classmethod
+    def _measured_finite(cls, v):
+        # 布尔不是浓度；NaN/Infinity 也不允许（pydantic 默认会接受）
+        if isinstance(v, bool):
+            raise ValueError("实测浓度须为数字（0-100 百分点），收到布尔值")
+        if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+            raise ValueError("实测浓度须为有限数字")
+        return v
+
+
+class TransferObservationIn(ObservationIn):
+    vessel_id: str = Field(..., min_length=1, description="双容器对账必填：观测所在容器编号")
+
+
+class ReconcileRequest(_Strict):
+    request: PrecheckRequest = Field(..., description="原单容器预检请求（与 /api/v1/precheck 完全相同）")
+    tolerance_percentage_points: float = Field(
+        ..., description="统一的有限非负浓度容差（百分点）；|实测-预测| ≤ 容差 即通过"
+    )
+    observations: list[ObservationIn] = Field(
+        default_factory=list, description="实测观测；可为空，此时仅返回原预检结果"
+    )
+
+    @field_validator("tolerance_percentage_points", mode="before")
+    @classmethod
+    def _tolerance_finite(cls, v):
+        # 布尔、NaN/Infinity 不是合法数字（schema 层拒绝）；负值由业务层以 INVALID_TOLERANCE 拒绝
+        if isinstance(v, bool):
+            raise ValueError("容差不得为布尔值")
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            raise ValueError("容差须为数字")
+        if fv != fv or fv in (float("inf"), float("-inf")):
+            raise ValueError("容差须为有限数字（百分点）")
+        return fv
+
+
+class TransferReconcileRequest(_Strict):
+    request: TransferPrecheckRequest = Field(..., description="原双容器转移预检请求（与 /api/v1/transfer-precheck 完全相同）")
+    tolerance_percentage_points: float = Field(
+        ..., description="统一的有限非负浓度容差（百分点）；|实测-预测| ≤ 容差 即通过"
+    )
+    observations: list[TransferObservationIn] = Field(
+        default_factory=list, description="实测观测（须指定 vessel_id）；可为空，此时仅返回原预检结果"
+    )
+
+    @field_validator("tolerance_percentage_points", mode="before")
+    @classmethod
+    def _tolerance_finite(cls, v):
+        if isinstance(v, bool):
+            raise ValueError("容差不得为布尔值")
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            raise ValueError("容差须为数字")
+        if fv != fv or fv in (float("inf"), float("-inf")):
+            raise ValueError("容差须为有限数字（百分点）")
+        return fv
+
+
+class ReconcileItem(_Strict):
+    index: int = Field(..., description="观测在提交数组中的下标（从 0 起）")
+    position: int = Field(..., description="0=初始态；正整数=该 seq 步骤完成后")
+    reagent_id: str
+    measured_concentration: float
+    predicted_concentration: float = Field(..., description="预测浓度（未四舍五入的计算值，百分点）")
+    deviation: float = Field(..., description="带符号偏差 实测-预测（未四舍五入，百分点）")
+    abs_deviation: float = Field(..., description="绝对偏差 |实测-预测|（未四舍五入，百分点）")
+    within_tolerance: bool
+
+
+class TransferReconcileItem(ReconcileItem):
+    vessel_id: str
+
+
+class FirstViolation(_Strict):
+    index: int = Field(..., description="最早超差观测在提交数组中的下标")
+    position: int
+    reagent_id: str
+    measured_concentration: float
+    predicted_concentration: float
+    abs_deviation: float
+
+
+class TransferFirstViolation(FirstViolation):
+    vessel_id: str
+
+
+class ReconcileResponse(_Strict):
+    tolerance_percentage_points: float
+    within_tolerance: bool = Field(..., description="全部观测均在容差内（含无观测）时为 true")
+    first_violation: FirstViolation | None = Field(
+        ..., description="按步骤执行顺序的最早超差位置（同位置按观测提交顺序）；无超差为 null"
+    )
+    observations: list[ReconcileItem] = Field(..., description="逐条预测值与偏差，按观测提交顺序")
+    precheck: PrecheckResponse = Field(..., description="原预检风险结果（与 /api/v1/precheck 响应一致）")
+
+
+class TransferReconcileResponse(_Strict):
+    tolerance_percentage_points: float
+    within_tolerance: bool
+    first_violation: TransferFirstViolation | None
+    observations: list[TransferReconcileItem]
+    precheck: TransferPrecheckResponse = Field(
+        ..., description="原双容器预检风险结果（与 /api/v1/transfer-precheck 响应一致）"
+    )
 
 
 class ErrorDetail(_Strict):
